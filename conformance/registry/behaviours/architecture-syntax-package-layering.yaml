@@ -281,3 +281,79 @@ decisions:
     code: [internal/proxy/metric_binary.go, internal/proxy/query_translation.go, internal/proxy/metric_agg.go]
     tests: [TestBinaryOperandsReadLikeTheirText, TestBinaryMatchingOfNestedExpressions, TestPlanRouteParity]
     quality: 'Behaviour-neutral: the requests and answers do not change; the operands are still the string translator''s.'
+  - id: stats-handlers-read-vlstats
+    chosen: 'Each producer of a translated stats query decodes it once (translator.DecodeStats: the stats verdict and the shape of the first stats pipe, as text) and passes physical.VLStats down: the range and instant handlers and the two post-aggregation paths hand it to proxyStatsQueryRange, proxyStatsQuery, handleStatsCompatRange, nativeMathTumblingStatsCompatible, handleStatsCompatInstant and proxyRankedTopKRange, which read its fields instead of re-reading the text. The readers (isStatsQuery, parseStatsCompatSpec) move verbatim into the translator''s codec; three paths that rewrite the query as text before reading it keep thin wrappers over it'
+    over: [swapping the readers in place at each site, a typed GroupKey for the grouping, building the stats queries from a typed Base in the same step]
+    why: |
+      Step ten of architecture B, first part (owner 2026-11-08). The base query
+      is sent to VictoriaLogs and goes into cache keys, which stay byte for byte
+      until the key step, and the LogsQL AST keeps no offsets, so the base stays
+      the original text before the stats pipe and the grouping stays text (a
+      bucket key such as `_time:60000000000ns offset 1ns` is one entry). The
+      typed Base and the typed query building (the design's string_reads −10
+      and text_built −40) are their own step, gated by byte-identical keys.
+      fieldBreakdownQuery, rankedSingleFieldQuery and
+      preserveMetricStreamIdentity read text they rewrote first; they move with
+      the typed query building. lowering_marker_reads 25 → 15; the moved reader
+      counts in translator_string_ops (646 → 664), the translator's every
+      strings call, and goes with the translator.
+    evidence: 'internal/querycorpus/stats_decode_test.go TestDecodeStatsReadsLikeTheProxyReaders (every corpus row''s translation, with and without markers, under the 12 profiles: about 4,900 texts per profile, the same verdict and shape as the proxy readers); route parity digests unchanged; route-parity dumps of two base and two PR runs: the 60 runs whose VictoriaLogs requests differ are all `| json`/`| logfmt` metric queries with identical status and route steps (two base runs already differ on 24 of them) (2026-11-09)'
+    code: [internal/translator/stats_codec.go, internal/queryplan/physical/ops.go, internal/proxy/proxy.go, internal/proxy/metric_binary.go, internal/proxy/range_metric_compat.go, internal/proxy/metric_agg.go, internal/proxy/stream_processing.go]
+    tests: [TestDecodeStatsReadsLikeTheProxyReaders, TestDecodeStatsShape, TestDecodeStatsTellsAStatsQuery, TestPlanRouteParity]
+    quality: 'Behaviour-neutral: the requests, keys and answers do not change.'
+  - id: lowering-line-filters
+    chosen: 'The line-filter regexp builders (the `or` chain pattern, the ip() address regexp and its CIDR and range builders) move out of the string translator into internal/translate, where translate.LineFilter builds a line filter stage as nodes (a logsql.Regexp, negated for != and !~); lower.Plan lowers a log query whose stages are all line filters to its stream filter and its line filters in order. Pattern filters (|> and !>), which the translator writes with extract pipes, stay delegated (LogSelect pattern filter)'
+    over: [keeping the builders in the translator behind an injected function, lowering the pattern filters in the same step, making the ip() line filter exact in the same step]
+    why: |
+      Step 12a of architecture B (owner 2026-11-09). One builder for the
+      translator and the lowering, as for the selectors in step 8; the moved
+      strings calls count with translator_string_ops. The pattern filters
+      need the lowering to add pipes, not only filters, and come in their own
+      step. The ip() line filter stays the documented regexp approximation
+      (semantics/ip-filter-precision): the shadow requires the lowering to
+      equal the translator, and an exact ip() needs proxy-side evaluation.
+    evidence: 'internal/querycorpus/plan_shadow_test.go TestPlanShadow (native 420 → 600 of 22,818 rows × profiles, 0 mismatches); TestVLOracle typed rows (VictoriaLogs'' parser accepts and reads the lowered and translated log queries alike: 328 rows on v1.49.0 and v1.53.0, from 176); TestPlanMatchesLokiOracle (the line filters of the 111 corpus pipelines that have them equal Loki''s tree: match type, value, ip(), or chains; Loki holds a negated chain as one negated filter per alternative) (2026-11-09)'
+    code: [internal/translate/linefilter.go, internal/queryplan/lower/lower.go, internal/translator/translator.go, test/oracle/loki/facts.go]
+    tests: [TestPlanLowersBareSelectors, TestPlanDelegatesEveryConstruct, TestPlanShadow, TestVLOracle, TestPlanMatchesLokiOracle, TestBuildCIDRRegex, TestBuildIPRangeRegex, TestIPLineFilterToRegex]
+    quality: 'No handler reads the lowering yet.'
+    performance:
+      tracked: ['BenchmarkLineFilterQueriesTranslator / BenchmarkLineFilterQueriesLowered ns/op, B/op, allocs/op (internal/queryplan/lower)']
+      bound: 'The 15 lowered line-filter log queries of the corpus, text to LogsQL (2026-11-09, M5 Pro, GOMAXPROCS=4, count=6): string translator 8.53 µs, 5.4 KiB, 98 allocs; Parse + Build + Resolve + Plan 3.08 µs, 5.0 KiB, 95 allocs'
+  - id: unwrap-handlers-read-the-gate
+    chosen: 'translator.DecodeStats also records the unwrap gate that ends the decoded base (Gate, the exact suffix SplitUnwrapGate splits off, and UnwrapField) and the query without it (UngatedText). statsCompatSpec carries the gate; gated() reads whether the current BaseQuery still ends with it and ungated() strips it, and withoutUnwrapGate clears it on the copy it returns. The quantile-counts route, the raw-row evaluators, the unwrap window route and the native-tumbling math check read the spec or the operator instead of splitting the text'
+    over: [precomputing the ungated base at decode time, a typed unwrap gate in the base query, moving queryUsesParserStages]
+    why: |
+      Step eleven of architecture B (owner 2026-11-09). The base query is
+      rewritten after decode (withWindowPhaseFilter inserts the window-phase
+      filter at the first top-level pipe, before the gate; the rate_counter
+      proof does the same on the ungated copy), so a base computed once could
+      go stale; a gate kept as the suffix it is stays right through any
+      rewrite that leaves it last, and reads false like SplitUnwrapGate once
+      a rewrite breaks it. queryUsesParserStages splits the gate off text it
+      rewrote first and stays until the typed query building.
+      lowering_marker_reads 15 → 11; queryWithoutUnwrapGate moved into the
+      codec (translator_string_ops 664 → 665).
+    evidence: 'internal/proxy/unwrap_gate_spec_test.go TestUnwrapGateReadFromTheDecodedSpec (every corpus row''s translation, v1.53.0 and v1.49.0, plain and underscore labels: 679 gated stats queries each; gated/ungated equal SplitUnwrapGate as decoded, after withWindowPhaseFilter and after withoutUnwrapGate); unwrap, rate_counter and quantile suites; route parity digests unchanged; dumps of two base and two PR runs: the 76 runs that differ are `| json`/`| logfmt` probe races with identical status and steps, none an unwrap query (2026-11-09)'
+    code: [internal/translator/stats_codec.go, internal/queryplan/physical/ops.go, internal/proxy/range_metric_compat.go, internal/proxy/unwrap_samples.go, internal/proxy/quantile_histogram.go]
+    tests: [TestUnwrapGateReadFromTheDecodedSpec, TestDecodeStatsShape, TestPlanRouteParity]
+    quality: 'Behaviour-neutral: the requests, keys and answers do not change.'
+    performance:
+      tracked: ['BenchmarkUnwrapGateReadsBefore / BenchmarkUnwrapGateReadsAfter ns/op, B/op, allocs/op (internal/proxy)']
+      bound: 'The unwrap-gate reads of one gated range request (2026-11-09, M5 Pro, GOMAXPROCS=4, count=6): 8.27 µs, 9.0 KiB, 30 allocs before; 4.36 µs, 5.1 KiB, 15 allocs after'
+  - id: line-filter-text-not-utf8
+    chosen: 'A |= or != line filter whose text is not UTF-8 is answered from the fact that no stored line holds such bytes: translate.TextLineFilter writes `|=` as match-none (`_stream_id:in()`), `!=` as no filter, and an `or` chain as the regexp of its valid alternatives; the translator and the lowering share it, and valid texts keep their exact LogsQL. Loki''s text error body is written as valid UTF-8, one U+FFFD per invalid byte, as Loki writes it'
+    over: ['writing each invalid byte as \x{FFFD} in the VictoriaLogs regexp (a superset that matches lines holding U+FFFD)', 'evaluating the filter on rows in the proxy', 'strings.ToValidUTF8 (one U+FFFD per run, not per byte as Loki)']
+    why: |
+      VictoriaLogs refuses to compile a regexp with bytes that are not UTF-8,
+      so the proxy answered 400 where Loki answers 200. Every ingestion API
+      (Loki push, OTLP, VictoriaLogs JSON lines) carries UTF-8 text, so Loki's
+      byte match of such a text never matches a stored line: the exact answer
+      needs no VictoriaLogs filter at all. Loki's 400 text for `|~ "\xff"`
+      quotes the regexp with U+FFFD per byte (stack, Loki 3.7, 2026-11-09).
+    evidence: 'TestCompat_LineFilterInvalidUTF8LikeLoki against Loki on the compose stack (|= 200 no line, != 200 every line, or chain 200 with 2 lines, |~ 400 with Loki''s bytes, metric instant equal); TestPlanShadow native 624 of 22,842 rows × profiles, 0 mismatches; TestVLOracle on the 28,663-row corpus, v1.49.0 and v1.53.0, with the invalid-UTF-8 skip removed; TestVLCapability_EmptyInMatchesNothing (the match-no-rows filter keeps no row, log and stats) on VictoriaLogs v1.49.0 and v1.53.0 (2026-11-09)'
+    code: [internal/translate/linefilter.go, internal/translator/translator.go, internal/queryplan/lower/lower.go, internal/proxy/http_utils.go]
+    tests: [TestCompat_LineFilterInvalidUTF8LikeLoki, TestVLCapability_EmptyInMatchesNothing, TestTranslateLineFilterInvalidUTF8, TestInvalidUTF8RegexpErrorTextLikeLoki, TestValidUTF8Text, FuzzErrorBodyShapes, TestPlanShadow, TestVLOracle]
+    quality: 'semantics/line-filter-invalid-utf8 fixed: the log query, the metric query and the error text answer like Loki.'
+    performance:
+      tracked: ['BenchmarkTranslateLogQL_LineFilter / BenchmarkTranslateLogQL_LineFilterInvalidUTF8 (internal/translator), BenchmarkWriteLokiErrorBody (internal/proxy) ns/op, B/op, allocs/op']
+      bound: 'M5 Pro, GOMAXPROCS=4, count=6, 2026-11-09: valid line filters unchanged (7.48 µs, 2.6 KiB, 35 allocs; base 7.57 µs, 35 allocs); invalid-UTF-8 filters 6.63 µs, 36 allocs (base 6.73 µs, 39 allocs, then rejected by VictoriaLogs); valid error body unchanged (244 ns, 10 allocs), an invalid-UTF-8 error body 454 ns, 11 allocs (base 242 ns, 10)'

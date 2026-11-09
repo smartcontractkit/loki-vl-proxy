@@ -8,6 +8,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/queryplan/physical"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translate"
 )
 
 // Until a construct's lowering lands, Plan delegates it to the string translator with ErrNotLowered naming the
@@ -16,14 +17,15 @@ import (
 // conformance: architecture-syntax-package-layering
 func TestPlanDelegatesEveryConstruct(t *testing.T) {
 	for construct, q := range map[string]string{
-		"LogSelect pipeline": `{app="a"} | json | level="error"`,
-		"RangeAgg":           `rate({app="a"}[5m])`,
-		"VectorAgg":          `sum by (app) (count_over_time({app="a"}[5m]))`,
-		"Rank":               `topk(3, sum by (app) (rate({app="a"}[5m])))`,
-		"BinOp":              `sum(rate({app="a"}[5m])) / sum(rate({app="b"}[5m]))`,
-		"LabelReplace":       `label_replace(rate({app="a"}[5m]), "b", "$1", "app", "(.*)")`,
-		"VectorLit":          `vector(1)`,
-		"Scalar":             `1`,
+		"LogSelect pipeline":       `{app="a"} | json | level="error"`,
+		"LogSelect pattern filter": `{app="a"} |> "<_> error <_>"`,
+		"RangeAgg":                 `rate({app="a"}[5m])`,
+		"VectorAgg":                `sum by (app) (count_over_time({app="a"}[5m]))`,
+		"Rank":                     `topk(3, sum by (app) (rate({app="a"}[5m])))`,
+		"BinOp":                    `sum(rate({app="a"}[5m])) / sum(rate({app="b"}[5m]))`,
+		"LabelReplace":             `label_replace(rate({app="a"}[5m]), "b", "$1", "app", "(.*)")`,
+		"VectorLit":                `vector(1)`,
+		"Scalar":                   `1`,
 	} {
 		t.Run(construct, func(t *testing.T) {
 			expr, err := logql.Parse(q)
@@ -87,6 +89,16 @@ func TestPlanLowersBareSelectors(t *testing.T) {
 		{"detected_level matches none", `{detected_level="error"}`, Profile{}, `_stream_id:in()`},
 		{"detected_level matches all", `{detected_level=~".*"}`, Profile{}, `*`},
 		{"keep line", `{app="a"}`, Profile{KeepLine: true}, `app:="a"`},
+		{"substring line filter", `{app="a"} |= "x.y"`, Profile{}, `app:="a" ~"x\\.y"`},
+		{"negated regexp line filter", `{app="a"} !~ "e.+r"`, Profile{}, `app:="a" NOT ~"e.+r"`},
+		{"or chain", `{app="a"} |= "a" or "b"`, Profile{}, `app:="a" ~"a|b"`},
+		{"negated or chain", `{app="a"} != "a" or "b"`, Profile{}, `app:="a" NOT ~"a|b"`},
+		{"ip line filter", `{app="a"} != ip("10.0.0.1")`, Profile{}, `app:="a" ` + translate.IPLineFilter("10.0.0.1", true).String()},
+		{"line filters in order", `{app="a"} |= "x" != "y"`, Profile{}, `app:="a" ~"x" NOT ~"y"`},
+		{"text that is not UTF-8 matches no line", `{app="a"} |= "\xff\xfe"`, Profile{}, `app:="a" _stream_id:in()`},
+		{"!= of text that is not UTF-8 keeps every line", `{app="a"} != "\xff"`, Profile{}, `app:="a"`},
+		{"or chain without the text that is not UTF-8", `{app="a"} |= "\xff" or "b"`, Profile{}, `app:="a" ~"b"`},
+		{"!= chain without the text that is not UTF-8", `{app="a"} != "\xff" or "b"`, Profile{}, `app:="a" NOT ~"b"`},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			op, err := Plan(planOf(t, c.q), c.prof)

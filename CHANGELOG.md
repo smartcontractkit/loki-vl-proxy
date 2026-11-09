@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A `|=` or `!=` line filter whose text is not UTF-8 (`|= "\xff\xfe"`)
+  answers like Loki instead of 400: `|=` keeps no line and `!=` every line,
+  since no stored line holds such bytes, and an `or` chain keeps its valid
+  alternatives. Error texts that quote such bytes (`|~ "\xff"`) write each one
+  as U+FFFD, as Loki does.
+
+## [2.108.0] - 2026-11-09
+
+### Fixed
+
+- An IPv4 `ip()` line filter (`|= ip("10.0.0.1")`, CIDR and range patterns, and
+  `!= ip(...)`) keeps the lines Loki keeps: the address read as Loki's filter
+  reads it, no longer as a substring of a longer number. **Breaking:** lines
+  such as `10.0.0.12`, `110.0.0.12`, `10.0.0.1.5` or `::ffff:10.0.0.1` no
+  longer match `ip("10.0.0.1")` (and are kept by `!= ip("10.0.0.1")`), as in
+  Loki. IPv6 `ip()` line filters are unchanged.
+
+## [2.107.0] - 2026-11-09
+
+### Changed
+
+- The unwrap paths read the unwrap gate of a stats query from its decoded
+  query-plan operator instead of splitting it off the query text again. The
+  requests sent to VictoriaLogs and the answers do not change.
+
+## [2.106.0] - 2026-11-09
+
+### Changed
+
+- The line-filter builders moved out of the string translator into the package
+  the translator and the query-plan lowering share, and the lowering now
+  translates log queries with line filters natively, held to the string
+  translator on every corpus query. No handler reads the lowering yet, so
+  responses do not change.
+
+- The stats handlers read each translated stats query as a typed query-plan
+  operator decoded once where the query is produced, instead of re-reading its
+  text at every step. The requests sent to VictoriaLogs, the cache keys and the
+  answers do not change.
+
+## [2.105.1] - 2026-11-09
+
+### Fixed
+
+- A `#` comment right after a label filter (`{app="a"} | status="500" # note`,
+  `| status=500#`) is skipped as Loki skips it. The proxy rejected the query
+  with a parse error after a quoted value, and read a number's value with the
+  comment text attached. A `<>` inside a line filter's text (`|= "<>"`), a
+  regexp or a comment is accepted as in Loki: a text check had rejected any
+  `<>` in the query; the parser still rejects the operator with Loki's error.
+
 ## [2.105.0] - 2026-11-08
 
 ### Changed

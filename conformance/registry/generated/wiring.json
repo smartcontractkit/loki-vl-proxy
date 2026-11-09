@@ -19,7 +19,9 @@
       "internal/proxy/binary_operand_test.go",
       "internal/proxy/plan_predicate_parity_test.go",
       "internal/proxy/plan_route_parity_test.go",
+      "internal/proxy/unwrap_gate_spec_test.go",
       "internal/querycorpus/plan_shadow_test.go",
+      "internal/querycorpus/stats_decode_test.go",
       "internal/queryplan/lower/lower_test.go",
       "internal/translate/selector_test.go"
     ],
@@ -351,9 +353,11 @@
       "test/e2e-compat/first_last_under_aggregation_test.go",
       "test/e2e-compat/instant_result_type_test.go",
       "test/e2e-compat/ip_label_filter_test.go",
+      "test/e2e-compat/ip_line_filter_test.go",
       "test/e2e-compat/keep_service_name_test.go",
       "test/e2e-compat/label_matcher_regexp_anchoring_test.go",
       "test/e2e-compat/label_replace_new_label_test.go",
+      "test/e2e-compat/line_filter_invalid_utf8_test.go",
       "test/e2e-compat/marker_text_test.go",
       "test/e2e-compat/nested_vector_aggregation_test.go",
       "test/e2e-compat/non_sum_vector_aggregation_range_test.go",
@@ -454,12 +458,14 @@
       "test/e2e-compat/first_last_under_aggregation_test.go",
       "test/e2e-compat/heavy_query_protection_test.go",
       "test/e2e-compat/ip_label_filter_test.go",
+      "test/e2e-compat/ip_line_filter_test.go",
       "test/e2e-compat/keep_service_name_test.go",
       "test/e2e-compat/keep_structured_metadata_test.go",
       "test/e2e-compat/label_filter_expression_test.go",
       "test/e2e-compat/label_matcher_regexp_anchoring_test.go",
       "test/e2e-compat/label_replace_new_label_test.go",
       "test/e2e-compat/line_fields_parity_test.go",
+      "test/e2e-compat/line_filter_invalid_utf8_test.go",
       "test/e2e-compat/logfmt_existence_filter_test.go",
       "test/e2e-compat/logfmt_risk_candidates_test.go",
       "test/e2e-compat/marker_text_test.go",
@@ -1022,6 +1028,10 @@
       "internal/translator/ip_label_filter_test.go",
       "test/e2e-compat/ip_label_filter_test.go"
     ],
+    "semantics/ip-filter-precision": [
+      "internal/translate/ip_line_filter_loki_test.go",
+      "test/e2e-compat/ip_line_filter_test.go"
+    ],
     "semantics/ip-label-filter-embedded-address": [
       "internal/translator/ip_label_filter_test.go"
     ],
@@ -1029,6 +1039,10 @@
       "internal/proxy/ip_label_filter_test.go",
       "internal/translator/ip_label_filter_test.go",
       "test/e2e-compat/ip_label_filter_test.go"
+    ],
+    "semantics/ip-line-filter-ipv4-like-loki": [
+      "internal/translate/ip_line_filter_loki_test.go",
+      "test/e2e-compat/ip_line_filter_test.go"
     ],
     "semantics/json-detected-level-error-split": [
       "internal/proxy/ordered_json_detected_level_split_test.go",
@@ -1157,6 +1171,12 @@
     "semantics/labels-end-inclusive-like-loki": [
       "internal/proxy/labels_inclusive_end_test.go",
       "test/e2e-compat/labels_zero_width_test.go"
+    ],
+    "semantics/line-filter-invalid-utf8": [
+      "internal/proxy/error_text_utf8_test.go",
+      "internal/translator/line_filter_invalid_utf8_test.go",
+      "test/e2e-compat/line_filter_invalid_utf8_test.go",
+      "test/e2e-compat/vl_empty_in_test.go"
     ],
     "semantics/line-filter-or-alternatives": [
       "internal/logql/log_range_alternatives_test.go",
@@ -1619,6 +1639,9 @@
     "versions/stats-bucket-label-v1.45": [
       "internal/proxy/ordered_json_extracted_pushdown_test.go"
     ],
+    "vl-empty-in-matches-nothing": [
+      "test/e2e-compat/vl_empty_in_test.go"
+    ],
     "vl-extra-stream-filters-exact-and-empty": [
       "test/e2e-compat/tenant_label_isolation_test.go"
     ],
@@ -1660,7 +1683,7 @@
       "test/e2e-compat/unwrap_ungrouped_sum_test.go"
     ]
   },
-  "registry_items": 438,
+  "registry_items": 441,
   "routes_without_registry_item": [],
   "test_to_items": {
     "cmd/proxy/main_test.go": [
@@ -1979,6 +2002,9 @@
       "status-500",
       "status-502",
       "status-503"
+    ],
+    "internal/proxy/error_text_utf8_test.go": [
+      "semantics/line-filter-invalid-utf8"
     ],
     "internal/proxy/extracted_probe_head_test.go": [
       "quality/extracted-label-probe-cost",
@@ -2700,6 +2726,9 @@
     "internal/proxy/unwrap_first_window_test.go": [
       "semantics/unwrap-conversion-error"
     ],
+    "internal/proxy/unwrap_gate_spec_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/proxy/unwrap_over_time_window_test.go": [
       "metric-series-identity",
       "quality/query-range-extent-cache",
@@ -2803,11 +2832,18 @@
     "internal/querycorpus/plan_shadow_test.go": [
       "architecture-syntax-package-layering"
     ],
+    "internal/querycorpus/stats_decode_test.go": [
+      "architecture-syntax-package-layering"
+    ],
     "internal/queryplan/lower/lower_test.go": [
       "architecture-syntax-package-layering"
     ],
     "internal/rulesmigrate/migrate_test.go": [
       "semantics/parenthesized-log-range"
+    ],
+    "internal/translate/ip_line_filter_loki_test.go": [
+      "semantics/ip-filter-precision",
+      "semantics/ip-line-filter-ipv4-like-loki"
     ],
     "internal/translate/selector_test.go": [
       "architecture-syntax-package-layering"
@@ -2861,6 +2897,9 @@
     "internal/translator/label_matcher_regexp_test.go": [
       "profiles/label-filter-regexp-anchoring",
       "profiles/stream-selector-regexp-anchoring"
+    ],
+    "internal/translator/line_filter_invalid_utf8_test.go": [
+      "semantics/line-filter-invalid-utf8"
     ],
     "internal/translator/line_filter_or_test.go": [
       "semantics/line-filter-or-alternatives"
@@ -3123,6 +3162,12 @@
       "semantics/ip-filter-json-stats-pushdown",
       "semantics/ip-label-filter-missing-label"
     ],
+    "test/e2e-compat/ip_line_filter_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/ip-filter-precision",
+      "semantics/ip-line-filter-ipv4-like-loki"
+    ],
     "test/e2e-compat/json_detected_level_series_limit_test.go": [
       "limits/series-limit-error",
       "semantics/json-metric-detected-level-derivation"
@@ -3203,6 +3248,11 @@
       "loki_api_v1_query_range",
       "profiles/detected-fields-structured-metadata-beside-json-line",
       "profiles/parsed-fields-without-parser"
+    ],
+    "test/e2e-compat/line_filter_invalid_utf8_test.go": [
+      "loki_api_v1_query",
+      "loki_api_v1_query_range",
+      "semantics/line-filter-invalid-utf8"
     ],
     "test/e2e-compat/line_format_error_test.go": [
       "semantics/line-format-template-error-keeps-entry"
@@ -3531,6 +3581,10 @@
       "semantics/unwrap-sample-validity",
       "status-400"
     ],
+    "test/e2e-compat/vl_empty_in_test.go": [
+      "semantics/line-filter-invalid-utf8",
+      "vl-empty-in-matches-nothing"
+    ],
     "test/e2e-compat/vl_pattern_lines_test.go": [
       "vl-phrase-filter-quoted-names",
       "vl-sort-ties-by-text"
@@ -3566,7 +3620,7 @@
       "profiles/structured-metadata-keys-per-profile"
     ]
   },
-  "tests_with_markers": 385,
+  "tests_with_markers": 393,
   "unknown_ids": {},
   "unwired_items": [
     "api_prom_label",
@@ -3625,7 +3679,6 @@
     "semantics/extracted-ungrouped-metric-raw-rows",
     "semantics/first-last-over-time-translation",
     "semantics/ip-filter-keeps-parser-error-lines",
-    "semantics/ip-filter-precision",
     "semantics/json-empty-value-label-series",
     "semantics/label-filter-before-parser-reads-ingest-json-key",
     "semantics/label-replace-aggregation-over-transform",
@@ -3671,5 +3724,5 @@
     "versions/capabilities-floor-vs-matrix",
     "versions/rejected-stats-query-wording-vl-1.47"
   ],
-  "wired_items": 263
+  "wired_items": 267
 }

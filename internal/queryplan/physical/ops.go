@@ -12,8 +12,24 @@ type Op interface{ op() }
 // query arrives with the handlers that read it.
 type VLQuery struct{ Text string }
 
-// VLStats is a VictoriaLogs stats query. Declared only: its fields arrive with the stats handlers.
-type VLStats struct{}
+// VLStats is a VictoriaLogs stats query as the translator writes it. Text is the whole query; when Shaped, Base is
+// the query before its first stats pipe and By, ByExplicit, Func and Field are that pipe's grouping and function,
+// as text (a bucket key such as `_time:1m offset 1s` stays one entry of By). The typed query arrives with the
+// stats lowering.
+type VLStats struct {
+	Text       string
+	Shaped     bool
+	Base       string
+	By         []string
+	ByExplicit bool
+	Func       string
+	Field      string
+	// Gate is the unwrap gate that ends Base (the pipes that select and convert the unwrapped value), and
+	// UnwrapField the field it converts; both empty without one. UngatedText is Text without the gate.
+	Gate        string
+	UnwrapField string
+	UngatedText string
+}
 
 // RankStep ranks the series of each step (topk, bottomk, sort). Declared only: its fields arrive with the
 // handlers that evaluate it.
